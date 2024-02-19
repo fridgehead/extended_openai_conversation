@@ -51,6 +51,8 @@ from .const import (
     CONF_BASE_URL,
     CONF_API_VERSION,
     CONF_SKIP_AUTHENTICATION,
+    CONF_IGNORE_CONVOID,
+    DEFAULT_IGNORE_CONVOID,
     DEFAULT_ATTACH_USERNAME,
     DEFAULT_ATTACH_USERNAME_TO_PROMPT,
     DEFAULT_CHAT_MODEL,
@@ -161,13 +163,23 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
     ) -> conversation.ConversationResult:
         raw_prompt = self.entry.options.get(CONF_PROMPT, DEFAULT_PROMPT)
         exposed_entities = self.get_exposed_entities()
-
+        messages = []
         if user_input.conversation_id in self.history:
-            conversation_id = user_input.conversation_id
-            messages = self.history[conversation_id]
+            # ignore this if IGNORE_CONVOID is set, we dont care about previous messages
+            ignore = self.entry.options.get(CONF_IGNORE_CONVOID, DEFAULT_IGNORE_CONVOID)
+            if ignore:
+                conversation_id = None
+            else:
+                conversation_id = user_input.conversation_id
+                messages = self.history[conversation_id]
         else:
-            conversation_id = ulid.ulid()
-            user_input.conversation_id = conversation_id
+            # ignore this if IGNORE_CONVOID is set, we dont care about previous messages
+            ignore = self.entry.options.get(CONF_IGNORE_CONVOID, DEFAULT_IGNORE_CONVOID)
+            if ignore:
+                conversation_id = None
+            else:
+                conversation_id = ulid.ulid()
+                user_input.conversation_id = conversation_id
             try:
                 user = await self.hass.auth.async_get_user(user_input.context.user_id)
                 prompt = self._async_generate_prompt(raw_prompt, exposed_entities)
@@ -218,7 +230,8 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
             )
 
         messages.append(response.model_dump(exclude_none=True))
-        self.history[conversation_id] = messages
+        if conversation_id != None:
+            self.history[conversation_id] = messages
         
         if len(services_called) > 0:
             response.content = response.content + ' \n\nService executed successfully.'
@@ -315,7 +328,6 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
             max_tokens=max_tokens,
             top_p=top_p,
             temperature=temperature,
-            user=user_input.conversation_id,
             functions=functions,
             function_call=function_call,
         )
@@ -343,51 +355,16 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
                     # handle scripts specially
                     if service.split(".")[0] == 'script':
                         script_entity_id = service
-                        service_call = {"entity_id": script_entity_id}
+                        # copy all other keys from the service call into the "variables" dict
+                        # this allows calling services with extra data
+                        variables = {}
+                        for k in service_call:
+                            variables[k] = service_call[k]
+                        service_call = {"entity_id": script_entity_id, "variables":variables}
                         service = "script.turn_on"
                     if not service or not service_call:
                         _LOGGER.info('Missing information')
                         continue
-                    user = await self.hass.auth.async_get_user(user_input.context.user_id)
-                    entities_to_authorize = []
-                    if 'entity_id' in service_call.keys():
-                        entities_to_authorize = [service_call['entity_id']]
-                    if 'device_id' in service_call.keys():
-                        device_id = service_call['device_id']
-                        entity_registry = self.hass.helpers.entity_registry.async_get(self.hass)
-                        for entity_id, entity_entry in entity_registry.entities.items():
-                            if entity_entry and entity_entry.device_id == device_id:
-                                entity_domain = entity.entity_id.split('.')[0]
-                                if service_domain == entity_domain:
-                                    entities_to_authorize.append(entity.entity_id)
-                    if 'area_id' in service_call.keys():
-                            entity_registry = self.hass.helpers.entity_registry.async_get(self.hass)
-                            area_id = service_call['area_id']
-                            device_registry = self.hass.helpers.device_registry.async_get(self.hass)
-                            devices_in_area = [
-                                device.id for device in device_registry.devices.values()
-                                if device.area_id == area_id
-                            ]
-                            for device_id in devices_in_area:
-                                for entity_id, entity_entry in entity_registry.entities.items():
-                                    if entity_entry and entity_entry.device_id == device_id:
-                                        entity_domain = entity_id.split('.')[0]
-                                        if service_domain == entity_domain:
-                                            entities_to_authorize.append(entity_id)
-
-                    for entity_id in entities_to_authorize:
-                        if not user.permissions.check_entity(entity_id, POLICY_CONTROL):
-                            # spice up the unauthorized text by making the LLM write it!
-                            response: ChatCompletion = await self.client.chat.completions.create(
-                                model=model,
-                                messages=[{"role": "user", "content": f"Rewrite this sentence in GlaDOS's personality. Do not include ANYTHING else. Do not include an explanation. Just write a sentence or two in GlaDOS's personality: You are not authorized to perform this task, {user.name}. What are you trying to do?"}],
-                                max_tokens=max_tokens,
-                                top_p=top_p,
-                                temperature=temperature
-                            )
-                            choice: Choice = response.choices[0]
-                            message = choice.message
-                            return [], message
                     await self.hass.services.async_call(
                         service.split(".")[0],
                         service.split(".")[1],
@@ -395,8 +372,9 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
                         blocking=True)
                     service_call['service'] = service
                     services_called.append(yaml.dump(service_call))
-                except:
+                except Exception as ex:
                     service_execution_failed = True
+                    _lOGGER.warning("Error: " + str(ex))
             if service_execution_failed:
                 message.content = message.content + '\n\n An error occurred while executing requested service.'
                 _LOGGER.warning(f'Error executing {segment}\n\nPrompt: {message.content}')

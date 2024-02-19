@@ -1,7 +1,7 @@
 """Constants for the Extended OpenAI Conversation integration."""
 
 DOMAIN = "extended_openai_conversation"
-DEFAULT_NAME = "Extended OpenAI Conversation"
+DEFAULT_NAME = "Custom OpenAI Compatible assistant"
 CONF_BASE_URL = "base_url"
 DEFAULT_CONF_BASE_URL = "https://api.openai.com/v1"
 CONF_API_VERSION = "api_version"
@@ -39,6 +39,8 @@ CONF_TEMPERATURE = "temperature"
 DEFAULT_TEMPERATURE = 0.5
 CONF_MAX_FUNCTION_CALLS_PER_CONVERSATION = "max_function_calls_per_conversation"
 DEFAULT_MAX_FUNCTION_CALLS_PER_CONVERSATION = 1
+CONF_IGNORE_CONVOID = "ignore_convoid"
+DEFAULT_IGNORE_CONVOID = False
 CONF_FUNCTIONS = "functions"
 DEFAULT_CONF_FUNCTIONS = [
     {
