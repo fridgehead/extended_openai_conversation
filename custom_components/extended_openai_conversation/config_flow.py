@@ -41,6 +41,8 @@ from .const import (
     CONF_BASE_URL,
     CONF_API_VERSION,
     CONF_SKIP_AUTHENTICATION,
+	CONF_IGNORE_CONVOID,
+	DEFAULT_IGNORE_CONVOID,
     DEFAULT_ATTACH_USERNAME,
     DEFAULT_ATTACH_USERNAME_TO_PROMPT,
     DEFAULT_CHAT_MODEL,
@@ -82,6 +84,7 @@ DEFAULT_OPTIONS = types.MappingProxyType(
         CONF_TEMPERATURE: DEFAULT_TEMPERATURE,
         CONF_FUNCTIONS: DEFAULT_CONF_FUNCTIONS_STR,
         CONF_ATTACH_USERNAME: DEFAULT_ATTACH_USERNAME,
+		CONF_IGNORE_CONVOID: DEFAULT_IGNORE_CONVOID,
         CONF_ATTACH_USERNAME_TO_PROMPT: DEFAULT_ATTACH_USERNAME_TO_PROMPT,
     }
 )
@@ -220,6 +223,11 @@ class OptionsFlow(config_entries.OptionsFlow):
                 description={"suggested_value": options.get(CONF_FUNCTIONS)},
                 default=DEFAULT_CONF_FUNCTIONS_STR,
             ): TemplateSelector(),
+			vol.Optional(
+                CONF_IGNORE_CONVOID,
+                description={"suggested_value": options.get(CONF_IGNORE_CONVOID)},
+                default=DEFAULT_IGNORE_CONVOID,
+            ): BooleanSelector(),
             vol.Optional(
                 CONF_ATTACH_USERNAME,
                 description={"suggested_value": options.get(CONF_ATTACH_USERNAME)},
